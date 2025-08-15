@@ -1,2 +1,2 @@
-# tilage
-A small page that accesses the gematik api to display the current issues.
+# TI Lage
+> Gematik API: https://github.com/gematik/api-tilage
