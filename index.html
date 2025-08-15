@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>TI-Lagebild</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --bg: #181a20;
+      --card-bg: #23262f;
+      --accent: #00c6cf;
+      --danger: #ff4c4c;
+      --warn: #ffb347;
+      --text: #eaeaea;
+      --muted: #b0b0b0; 
+      --border: #2a2d36;
+      --radius: 16px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.25);
+    }
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      transition: background 0.4s;
+      width: 100vw;
+      box-sizing: border-box;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 2em 0;
+      width: 100vw;
+      min-width: 0;
+    }
+    h2 {
+      font-size: 2.5em;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      margin-bottom: 0.5em;
+      color: var(--accent);
+      text-shadow: 0 2px 8px #0006;
+      animation: fadeInDown 1s;
+      text-align: center;
+      width: 100%;
+    }
+    h3 {
+      margin-top: 2em;
+      font-size: 1.3em;
+      color: var(--accent);
+      animation: fadeInLeft 1s;
+      text-align: left;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 2em 3em 1em 3em;
+      margin: 1em auto;
+      width: 90vw;
+      max-width: 1400px;
+      border: 1px solid var(--border);
+      animation: fadeInUp 0.8s;
+      box-sizing: border-box;
+    }
+    ul {
+      padding-left: 1.2em;
+      margin: 0.5em 0 1em 0;
+    }
+    li {
+      margin-bottom: 0.5em;
+      line-height: 1.5;
+      animation: fadeIn 0.7s;
+    }
+    .outage-partial {
+      color: var(--warn);
+      font-weight: 600;
+      animation: pulse 1.5s infinite;
+    }
+    .outage-total {
+      color: var(--danger);
+      font-weight: 700;
+      animation: pulse 1.2s infinite;
+    }
+    .funcs {
+      margin: 0.4em 0 1em 1.5em;
+      font-size: 1em;
+      color: var(--muted);
+      animation: fadeIn 1s;
+    }
+    .loader {
+      margin: 2em auto;
+      border: 6px solid var(--card-bg);
+      border-top: 6px solid var(--accent);
+      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      animation: spin 1s linear infinite;
+      display: block;
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(30px);}
+      to { opacity: 1; transform: translateY(0);}
+    }
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-30px);}
+      to { opacity: 1; transform: translateY(0);}
+    }
+    @keyframes fadeInLeft {
+      from { opacity: 0; transform: translateX(-30px);}
+      to { opacity: 1; transform: translateX(0);}
+    }
+    @keyframes fadeIn {
+      from { opacity: 0;}
+      to { opacity: 1;}
+    }
+    @keyframes pulse {
+      0% { filter: brightness(1);}
+      50% { filter: brightness(1.5);}
+      100% { filter: brightness(1);}
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg);}
+      100% { transform: rotate(360deg);}
+    }
+    @media (max-width: 900px) {
+      .card { padding: 1em; max-width: 98vw; }
+      h2 { font-size: 1.7em; }
+    }
+    @media (max-width: 600px) {
+      .card { padding: 0.5em; }
+      h2 { font-size: 1.2em; }
+    }
+  </style>
+</head>
+<body>
+  <h2>TI-Lagebild</h2>
+  <div class="card" id="erg">
+    <div class="loader"></div>
+  </div>
+  <button id="refreshBtn" style="
+    margin: 2em auto 0 auto;
+    display: block;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.8em 2em;
+    font-size: 1.1em;
+    font-weight: 600;
+    cursor: not-allowed;
+    box-shadow: var(--shadow);
+    transition: background 0.3s, cursor 0.3s, opacity 0.3s;
+  ">Aktualisieren</button>
+  <div id="cooldownMsg" style="text-align:center;color:var(--muted);margin-top:0.5em;"></div>
+  <script>
+    const baseUrl = 'https://ti-lage.prod.ccs.gematik.solutions/lageapi/v2/tilage';
+    const params = new URLSearchParams(location.search);
+    const allowedParams = ['ciAccess', 'ciTspSmcb', 'ciTspHba', 'ciKim'];
+    let queryParts = [];
+    allowedParams.forEach(param => {
+      const value = params.get(param);
+      if (value) queryParts.push(`${param}=${encodeURIComponent(value)}`);
+    });
+    const apiUrl = queryParts.length ? `${baseUrl}?${queryParts.join('&')}` : baseUrl;
+    const outputDiv = document.getElementById('erg');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const cooldownMsg = document.getElementById('cooldownMsg');
+    const COOLDOWN_MS = 5 * 60 * 1000; // 5 Minuten
+
+    function fetchData() {
+      outputDiv.innerHTML = '<div class="loader"></div>';
+      fetch(apiUrl)
+        .then(response => response.json())
+        .then(data => {
+          setTimeout(() => {
+            let html = "";
+
+            // Aktuelle Störungen
+            html += "<h3>Aktuelle Störungen</h3>";
+            if (Array.isArray(data.cause) && data.cause.length) {
+              html += "<ul>";
+              data.cause.forEach(cause => {
+                if (typeof cause === "object") {
+                  html += `<li>${Object.values(cause).join(" | ")}</li>`;
+                } else {
+                  html += `<li>${cause}</li>`;
+                }
+              });
+              html += "</ul>";
+            } else {
+              html += "<div style='color:var(--muted);margin-bottom:1em;'>Keine Störungen bekannt.</div>";
+            }
+
+            // Auswirkungen
+            html += "<h3>Auswirkungen</h3>";
+            let hasOutage = false;
+            if (data.appStatus) {
+              for (const [appName, appInfo] of Object.entries(data.appStatus)) {
+                if (appInfo.outage && appInfo.outage !== "none") {
+                  hasOutage = true;
+                  const outageClass = appInfo.outage === "partial" ? "outage-partial" : "outage-total";
+                  html += `
+                    <div style="margin-bottom:1em;">
+                      <b>${appName}:</b>
+                      <span class="${outageClass}">${appInfo.outage}</span>
+                  `;
+                  if (Array.isArray(appInfo.affectedFunctions) && appInfo.affectedFunctions.length) {
+                    html += `
+                      <div class="funcs">
+                        <ul>
+                          ${appInfo.affectedFunctions.map(func =>
+                            `<li>${func.impactDesc || "-"}</li>`
+                          ).join("")}
+                        </ul>
+                      </div>
+                    `;
+                  }
+                  html += "</div>";
+                }
+              }
+            }
+            if (!hasOutage) {
+              html += "<div style='color:var(--muted);'>Keine aktuellen Auswirkungen.</div>";
+            }
+
+            outputDiv.innerHTML = html;
+          }, 1200);
+        })
+        .catch(error => {
+          outputDiv.innerHTML = `<div style="color:var(--danger);font-weight:600;">Fehler: ${error.message}</div>`;
+        });
+    }
+
+    function setCooldown() {
+      refreshBtn.disabled = true;
+      refreshBtn.style.opacity = "0.6";
+      refreshBtn.style.cursor = "not-allowed";
+      let remaining = COOLDOWN_MS;
+
+      refreshBtn.textContent = `Aktualisieren`;
+
+      cooldownMsg.textContent = ""; 
+      const interval = setInterval(() => {
+        remaining -= 1000;
+        if (remaining > 0) {
+          const min = Math.floor(remaining / 60000);
+          const sec = Math.floor((remaining % 60000) / 1000);
+          refreshBtn.textContent = `Aktualisieren (${min}:${sec.toString().padStart(2, "0")})`;
+        } else {
+          clearInterval(interval);
+          refreshBtn.disabled = false;
+          refreshBtn.style.opacity = "1";
+          refreshBtn.style.cursor = "pointer";
+          refreshBtn.textContent = "Aktualisieren";
+        }
+      }, 1000);
+    }
+
+    refreshBtn.addEventListener('click', () => {
+      fetchData();
+      setCooldown();
+    });
+
+    fetchData();
+    setCooldown();
+  </script>
+</body>
+</html>
